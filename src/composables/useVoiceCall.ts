@@ -50,18 +50,35 @@ export function useVoiceCall(options: VoiceCallOptions) {
         }
     }
 
-    function setupWebSocket() {
-        const wsUrl = `${import.meta.env.VITE_WS_URL}/voice-call`
+    function setupWebSocket(config: CallConfig) {
+        const clientId = crypto.randomUUID()
+        const wsUrl = `${import.meta.env.VITE_WS_URL}/ws/${clientId}`
         ws.value = new WebSocket(wsUrl)
+
+        // 设置配置WebSocket
+        const configWs = new WebSocket(`${import.meta.env.VITE_WS_URL}/ws/${clientId}/config`)
+        configWs.onopen = () => {
+            configWs.send(JSON.stringify({
+                type: 'config',
+                voiceType: config.voiceType
+            }))
+        }
 
         ws.value.onopen = () => {
             connectionStatus.value = 'connected'
             console.log('WebSocket connected')
         }
 
-        ws.value.onmessage = (event) => {
-            const message = JSON.parse(event.data)
-            handleServerMessage(message)
+        ws.value.onmessage = async (event) => {
+            if (event.data instanceof Blob) {
+                // 处理音频数据
+                const arrayBuffer = await event.data.arrayBuffer()
+                await playAiResponse(arrayBuffer)
+            } else {
+                // 处理JSON消息
+                const message = JSON.parse(event.data)
+                handleServerMessage(message)
+            }
         }
 
         ws.value.onerror = (error) => {
@@ -106,17 +123,53 @@ export function useVoiceCall(options: VoiceCallOptions) {
         }
     }
 
-    function sendAudioData(audioData: Float32Array) {
+    async function sendAudioData(audioData: Float32Array) {
         if (!ws.value || ws.value.readyState !== WebSocket.OPEN) return
 
-        // 将音频数据转换为适合传输的格式
-        const buffer = new ArrayBuffer(audioData.length * 4)
-        const view = new DataView(buffer)
-        for (let i = 0; i < audioData.length; i++) {
-            view.setFloat32(i * 4, audioData[i])
+        // 创建WAV文件
+        const wavBlob = await floatTo16BitPCM(audioData, 24000)
+        ws.value.send(await wavBlob.arrayBuffer())
+    }
+
+    function floatTo16BitPCM(float32Array: Float32Array, sampleRate: number): Blob {
+        const wavHeader = createWavHeader(float32Array.length, sampleRate)
+        const pcmData = new Int16Array(float32Array.length)
+
+        // 转换为16位PCM
+        for (let i = 0; i < float32Array.length; i++) {
+            const s = Math.max(-1, Math.min(1, float32Array[i]))
+            pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
         }
 
-        ws.value.send(buffer)
+        return new Blob([wavHeader, pcmData.buffer], {type: 'audio/wav'})
+    }
+
+    function createWavHeader(dataLength: number, sampleRate: number): ArrayBuffer {
+        const header = new ArrayBuffer(44)
+        const view = new DataView(header)
+
+        // WAV Header格式设置
+        writeString(view, 0, 'RIFF')
+        view.setUint32(4, 36 + dataLength * 2, true)
+        writeString(view, 8, 'WAVE')
+        writeString(view, 12, 'fmt ')
+        view.setUint32(16, 16, true)
+        view.setUint16(20, 1, true)
+        view.setUint16(22, 1, true)
+        view.setUint32(24, sampleRate, true)
+        view.setUint32(28, sampleRate * 2, true)
+        view.setUint16(32, 2, true)
+        view.setUint16(34, 16, true)
+        writeString(view, 36, 'data')
+        view.setUint32(40, dataLength * 2, true)
+
+        return header
+    }
+
+    function writeString(view: DataView, offset: number, string: string) {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i))
+        }
     }
 
     async function startCall(config: CallConfig) {
@@ -124,15 +177,11 @@ export function useVoiceCall(options: VoiceCallOptions) {
 
         try {
             await initAudioContext()
-            setupWebSocket()
+            setupWebSocket(config)
 
             // 发送初始配置
             if (ws.value) {
                 ws.value.onopen = () => {
-                    ws.value?.send(JSON.stringify({
-                        type: 'config',
-                        voiceType: config.voiceType
-                    }))
                     connectionStatus.value = 'connected'
                 }
             }

@@ -59,7 +59,7 @@ const connectionStatus = computed(() => {
 
 async function testMicrophone() {
   if (isMicTesting.value) {
-    await stopVisualization()
+    stopVisualization()
     isMicTesting.value = false
     return
   }
@@ -89,8 +89,8 @@ async function startCall() {
 
 async function endCall() {
   try {
-    await terminateCall()
-    await stopVisualization()
+    terminateCall()
+    stopVisualization()
     isInCall.value = false
     stopCallTimer()
   } catch (error) {
