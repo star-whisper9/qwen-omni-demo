@@ -1,18 +1,17 @@
-import asyncio
 import io
-import json
 import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Dict
+
 import numpy as np
 import soundfile as sf
 import torch
 import uvicorn
-from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pathlib import Path
 from qwen_omni_utils import process_mm_info
 from transformers import Qwen2_5OmniModel, Qwen2_5OmniProcessor
-from typing import Dict
 
 from .config import Settings
 from .utils.audio import AudioProcessor
@@ -37,17 +36,19 @@ logger = logging.getLogger(__name__)
 # 初始化WebSocket连接管理器
 connection_manager = ConnectionManager()
 
+model_path = settings.MODEL_PATH
+
 
 class QwenModel:
     def __init__(self):
         self.model = Qwen2_5OmniModel.from_pretrained(
-            "Qwen/Qwen2.5-Omni-7B",
+            model_path,
             torch_dtype=torch.bfloat16,
             device_map="auto",
             attn_implementation="flash_attention_2",
             enable_audio_output=True,
         )
-        self.processor = Qwen2_5OmniProcessor.from_pretrained("Qwen/Qwen2.5-Omni-7B")
+        self.processor = Qwen2_5OmniProcessor.from_pretrained(model_path)
         self.conversations: Dict[str, list] = {}
 
     async def process_audio(self, client_id: str, audio_data: bytes, voice_type: str = "Chelsie"):
