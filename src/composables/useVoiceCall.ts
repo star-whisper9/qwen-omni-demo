@@ -56,7 +56,7 @@ export function useVoiceCall(options: VoiceCallOptions) {
         ws.value = new WebSocket(wsUrl)
 
         // 设置配置WebSocket
-        const configWs = new WebSocket(`${import.meta.env.VITE_WS_URL}/ws/${clientId}/config`)
+        const configWs = new WebSocket(`ws://localhost:6006/ws/${clientId}/config`)
         configWs.onopen = () => {
             configWs.send(JSON.stringify({
                 type: 'config',

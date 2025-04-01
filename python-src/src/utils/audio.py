@@ -2,7 +2,7 @@ import io
 import numpy as np
 import torch
 import wave
-import webrtcvada
+import webrtcvad
 from typing import Optional
 
 

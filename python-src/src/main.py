@@ -1,10 +1,7 @@
-import io
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import Dict
 
-import numpy as np
 import soundfile as sf
 import torch
 import uvicorn
@@ -15,6 +12,7 @@ from transformers import Qwen2_5OmniModel, Qwen2_5OmniProcessor
 
 from .config import Settings
 from .utils.audio import AudioProcessor
+from .utils.audio_handler import AudioHandler
 from .utils.websocket import ConnectionManager
 
 app = FastAPI()
@@ -36,7 +34,7 @@ logger = logging.getLogger(__name__)
 # 初始化WebSocket连接管理器
 connection_manager = ConnectionManager()
 
-model_path = settings.MODEL_PATH
+model_path = "/root/autodl-tmp/model/Qwen2_5-Omni-7B"
 
 
 class QwenModel:
@@ -50,39 +48,34 @@ class QwenModel:
         )
         self.processor = Qwen2_5OmniProcessor.from_pretrained(model_path)
         self.conversations: Dict[str, list] = {}
+        self.audio_handler = AudioHandler()
 
     async def process_audio(self, client_id: str, audio_data: bytes, voice_type: str = "Chelsie"):
+        temp_path = None
         try:
-            # 将音频数据转换为numpy数组
-            audio_array = np.frombuffer(audio_data, dtype=np.float32)
+            # 保存音频文件
+            temp_path, audio_array = self.audio_handler.save_audio(audio_data, client_id)
 
-            # 构建对话内容
+            # 初始化对话
             if client_id not in self.conversations:
-                self.conversations[client_id] = [
-                    {
-                        "role": "system",
-                        "content": "You are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, capable of perceiving auditory and visual inputs, as well as generating text and speech.",
-                    }
-                ]
+                self.conversations[client_id] = [{
+                    "role": "system",
+                    "content": "You are Qwen..."
+                }]
 
-            # 保存音频到临时文件
-            temp_audio_path = f"temp_{client_id}_{datetime.now().timestamp()}.wav"
-            sf.write(temp_audio_path, audio_array, samplerate=24000)
-
-            # 添加用户输入到对话
+            # 添加用户输入
             self.conversations[client_id].append({
                 "role": "user",
-                "content": [
-                    {"type": "audio", "audio": temp_audio_path}
-                ]
+                "content": [{"type": "audio", "audio": temp_path}]
             })
 
-            # 准备模型输入
+            # 处理和生成响应
             text = self.processor.apply_chat_template(
                 self.conversations[client_id],
                 add_generation_prompt=True,
                 tokenize=False
             )
+
             audios, images, videos = process_mm_info(
                 self.conversations[client_id],
                 use_audio_in_video=True
@@ -96,8 +89,7 @@ class QwenModel:
                 return_tensors="pt",
                 padding=True,
                 use_audio_in_video=True
-            )
-            inputs = inputs.to(self.model.device).to(self.model.dtype)
+            ).to(self.model.device, self.model.dtype)
 
             # 生成响应
             text_ids, audio = self.model.generate(
@@ -106,39 +98,38 @@ class QwenModel:
                 spk=voice_type
             )
 
-            # 解码文本
             response_text = self.processor.batch_decode(
                 text_ids,
                 skip_special_tokens=True,
                 clean_up_tokenization_spaces=False
             )[0]
 
-            # 将音频转换为bytes
-            audio_bytes = io.BytesIO()
-            sf.write(
-                audio_bytes,
-                audio.reshape(-1).detach().cpu().numpy(),
-                samplerate=24000,
-                format='WAV'
+            # 保存响应
+            audio_bytes = self.audio_handler.save_response(
+                audio.reshape(-1).detach().cpu().numpy()
             )
 
-            # 添加助手回复到对话历史
+            # 更新对话历史
             self.conversations[client_id].append({
                 "role": "assistant",
                 "content": response_text
             })
 
-            # 清理临时文件
-            Path(temp_audio_path).unlink()
-
             return {
                 "text": response_text,
-                "audio": audio_bytes.getvalue()
+                "audio": audio_bytes
             }
 
         except Exception as e:
-            logger.error(f"Error processing audio: {str(e)}")
+            logger.error(f"Error in process_audio: {str(e)}")
             raise
+
+        finally:
+            # 清理临时文件
+            if temp_path:
+                Path(temp_path).unlink(missing_ok=True)
+            # 定期清���过期文件
+            self.audio_handler.cleanup_temp_files()
 
 
 qwen_model = QwenModel()
@@ -204,7 +195,7 @@ async def config_endpoint(websocket: WebSocket, client_id: str):
 
 if __name__ == "__main__":
     uvicorn.run(
-        "main:app",
+        "src.main:app",
         host=settings.HOST,
         port=settings.PORT,
         reload=settings.DEBUG

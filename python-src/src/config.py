@@ -15,7 +15,6 @@ class Settings(BaseSettings):
     # 模型配置
     MODEL_NAME: str = "Qwen/Qwen2.5-Omni-7B"
     ENABLE_FLASH_ATTENTION: bool = True
-    MODEL_PATH = ""
 
     # 音频配置
     SAMPLE_RATE: int = 24000
