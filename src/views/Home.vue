@@ -2,18 +2,8 @@
 const navLinks = [
   {
     path: '/chat/voice',
-    title: '☎️',
-    description: '像与好友打电话一样与 Omni 聊天'
-  },
-  {
-    path: '/',
-    title: '💬',
-    description: '仍在施工...'
-  },
-  {
-    path: '/',
-    title: '📹',
-    description: '仍在施工...'
+    title: '语音聊天',
+    description: ''
   }
 ]
 </script>

@@ -1,28 +1,25 @@
-from typing import List
+import os
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+
+load_dotenv()
 
 
 class Settings(BaseSettings):
-    # 基础配置
-    DEBUG: bool = True
-    HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    HOST: str = os.getenv("HOST", "0.0.0.0")
+    PORT: int = int(os.getenv("PORT", "6006"))
+    MODEL_PATH: str = os.getenv("MODEL_PATH", "Qwen/Qwen2.5-Omni-7B")
+    USE_FLASH_ATTENTION: bool = os.getenv("USE_FLASH_ATTENTION", "True").lower() == "true"
+    DEVICE_MAP: str = os.getenv("DEVICE_MAP", "auto")
+    TORCH_DTYPE: str = os.getenv("TORCH_DTYPE", "auto")
 
-    # CORS配置
-    CORS_ORIGINS: List[str] = ["*"]
+    # 支持的声音类型
+    AVAILABLE_VOICES: list = ["Chelsie", "Ethan"]
+    DEFAULT_VOICE: str = "Chelsie"
 
-    # 模型配置
-    MODEL_NAME: str = "Qwen/Qwen2.5-Omni-7B"
-    ENABLE_FLASH_ATTENTION: bool = True
+    # 系统提示词 - 必须包含以启用音频输出
+    SYSTEM_PROMPT: str = "You are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, capable of perceiving auditory and visual inputs, as well as generating text and speech."
 
-    # 音频配置
-    SAMPLE_RATE: int = 24000
-    CHUNK_SIZE: int = 4096
-    VAD_THRESHOLD: float = 0.5
 
-    # WebSocket配置
-    WS_HEARTBEAT_INTERVAL: int = 30  # seconds
-
-    class Config:
-        env_file = ".env"
+settings = Settings()
